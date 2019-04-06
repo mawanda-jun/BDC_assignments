@@ -32,6 +32,8 @@ def main():
     # e ti chiede cosa fare dei valori delle chiavi: in questo caso dobbiamo sommarle.
     # Di conseguenza, i valori che prende "add" in input sono il valore della chiave della coppia che esiste gia' e
     # il valore della chiave della coppia che vogliamo inserire.
+
+    # per vedere la documentazione dei metodi, pigia "CTRL" + "Q"
     wc_per_pair = docs\
         .flatMap(word_count_per_doc)\
         .reduceByKey(add)\
