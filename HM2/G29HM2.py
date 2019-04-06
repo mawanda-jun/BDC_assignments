@@ -1,5 +1,7 @@
 from pyspark import SparkContext, SparkConf
 from time import time
+from operator import add
+
 import os
 
 spark_conf = SparkConf(True).setAppName('G29HM2').setMaster('local')
@@ -16,14 +18,17 @@ def word_count_per_doc(document):
     return [(key, pairs_dict[key]) for key in pairs_dict.keys()]
 
 
-def count_values_per_key(pair_1, pair2_):
-    word1, occurrences1 = pair_1[0], list(pair_1[1])
-    word2, occurrences2 = pair_2[0], list(pair_2[1])
-    sum_o = 0
-
-    for o in occurrences1:
-        sum_o += o
-    return (word1, sum_o)
+def count_values_per_key(list_of_pairs, input_pair):
+    if not list_of_pairs:
+        return [input_pair]
+    found = False
+    for pair in list_of_pairs:
+        if pair[0] == input_pair[0]:
+            pair[1] += input_pair[1]
+            found = True
+    if not found:
+        list_of_pairs.append(input_pair)
+    return list_of_pairs
 
 
 def main():
@@ -31,11 +36,12 @@ def main():
 
     docs = sc.textFile(os.path.join('HM2', 'dataset.txt')).repartition(K)
 
-    # MAP PHASE 1
-    wordcountpairs = docs\
+    # assignment 1: the Improved Word count 1 algorithm described in class the using reduceByKey method
+    wc_per_pair = docs\
         .flatMap(word_count_per_doc)\
-        .reduceByKey()
-    print(wordcountpairs)
+        .reduceByKey(add)\
+        .collect()
+    print(wc_per_pair)
 
 
 if __name__ == '__main__':
