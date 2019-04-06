@@ -18,17 +18,8 @@ def word_count_per_doc(document):
     return [(key, pairs_dict[key]) for key in pairs_dict.keys()]
 
 
-def count_values_per_key(list_of_pairs, input_pair):
-    if not list_of_pairs:
-        return [input_pair]
-    found = False
-    for pair in list_of_pairs:
-        if pair[0] == input_pair[0]:
-            pair[1] += input_pair[1]
-            found = True
-    if not found:
-        list_of_pairs.append(input_pair)
-    return list_of_pairs
+def count_values_per_key(value, new_value):
+    return value + new_value
 
 
 def main():
@@ -37,6 +28,10 @@ def main():
     docs = sc.textFile(os.path.join('HM2', 'dataset.txt')).repartition(K)
 
     # assignment 1: the Improved Word count 1 algorithm described in class the using reduceByKey method
+    # reduceByKey, da quello che ho capito, prende la lista di coppie passata da flatMap, e le raggruppa per chiave.
+    # e ti chiede cosa fare dei valori delle chiavi: in questo caso dobbiamo sommarle.
+    # Di conseguenza, i valori che prende "add" in input sono il valore della chiave della coppia che esiste gia' e
+    # il valore della chiave della coppia che vogliamo inserire.
     wc_per_pair = docs\
         .flatMap(word_count_per_doc)\
         .reduceByKey(add)\
