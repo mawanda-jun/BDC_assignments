@@ -11,16 +11,13 @@ parser.add_argument('-k', '--k', help='number of partitions', required=True)
 args = vars(parser.parse_args())
 
 # K = 3  # number of partitions
-K = int(args['k'])
 path = os.path.join(os.getcwd(), args['file_path'])
 if not os.path.isfile(path):
     raise EnvironmentError('Path/to/file.txt is not right')
+K = int(args['k'])
 
 spark_conf = SparkConf(True).setAppName('G29HM2').setMaster('local')
 sc = SparkContext(conf=spark_conf)
-
-# load partitions
-docs = sc.textFile(path).repartition(K).cache()
 
 
 def word_count_per_doc(document):
@@ -44,7 +41,7 @@ def assign_random_keys(couple):
     return int(K*random())
 
 
-def word_count_1(path):
+def word_count_1():
     # assignment 1: the Improved Word count 1 algorithm described in class the using reduceByKey method
     # reduceByKey, da quello che ho capito, prende la lista di coppie passata da flatMap, e le raggruppa per chiave.
     # e ti chiede cosa fare dei valori delle chiavi: in questo caso dobbiamo sommarle.
@@ -76,17 +73,15 @@ def gather_pairs(x):
             new_couples[word] += count
         else:
             new_couples[word] = count
-    arr = []
     for word, count in new_couples.items():
-        arr.append((word, count))
-    return arr
+        yield word, count
 
 
 def gather_pairs_partitions(couples):
     return gather_pairs(('', couples))
 
 
-def word_count_2(path):
+def word_count_2():
     wc_in_doc = docs\
         .flatMap(word_count_per_doc)\
         .groupBy(assign_random_keys)\
@@ -97,7 +92,7 @@ def word_count_2(path):
     return wc_in_doc
 
 
-def word_count_2_with_partition(path):
+def word_count_2_with_partition():
     wc_in_doc = docs\
         .flatMap(word_count_per_doc)\
         .mapPartitions(gather_pairs_partitions)\
@@ -106,18 +101,43 @@ def word_count_2_with_partition(path):
     return wc_in_doc
 
 
-if __name__ == '__main__':
-    print('Word count 1: {}'.format(word_count_1(path)))
-    # input('See time statistic at "localhost:4040". \nPress any key to compute next step...')
-    print('Word count 2: {}'.format(word_count_2(path)))
-    # input('See time statistic at "localhost:4040". \nPress any key to compute next step...')
-    wc_partition = word_count_2_with_partition(path)
+def print_stats(k=K):
+    start = time()
+    print(
+        '\n#--------------------------------------------------#\nWord count 1 with k={k}: {c}'.format(c=word_count_1(),
+                                                                                                      k=k))
+    end = time()
+    print('Time elapsed: {}\n#--------------------------------------------------#\n'.format(end - start))
+
+    start = time()
+    print(
+        '\n#--------------------------------------------------#\nWord count 2 with k={k}: {c}'.format(c=word_count_2(),
+                                                                                                      k=k))
+    end = time()
+    print('Time elapsed: {}\n#--------------------------------------------------#\n'.format(end - start))
+
+    wc_partition = word_count_2_with_partition()
+
+    start = time()
     words_in_wc_partition = wc_partition.count()
-    # print('Word count 2 with implicit partition: {}'.format(words_in_wc_partition))
-    # input('See time statistic at "localhost:4040". \nPress any key to compute next step...')
+    print(
+        '\n#--------------------------------------------------#\nWord count 2 with k={k} with mapPartition: {c}'.format(
+            c=words_in_wc_partition,
+            k=k))
+    end = time()
+    print('Time elapsed: {}\n#--------------------------------------------------#\n'.format(end - start))
+
     print('Average length of distinct words: {}'.format(
         wc_partition
         .map(lambda x: len(x[0]))
-        .reduce(add)/words_in_wc_partition
+        .reduce(add) / words_in_wc_partition
     ))
-    input('Press any key to exit...')
+
+
+if __name__ == '__main__':
+    # load partitions
+    docs = sc.textFile(path).repartition(K).cache()
+    a = docs.count()
+    print('Printing stats for k={} partitions as in input...'.format(K))
+    print_stats()
+    input('\nPress any key to exit...')
