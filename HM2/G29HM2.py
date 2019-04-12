@@ -21,6 +21,7 @@ sc = SparkContext(conf=spark_conf)
 
 # load partitions
 docs = sc.textFile(path).repartition(K).cache()
+docs.count()
 
 
 def word_count_per_doc(document):
@@ -44,7 +45,7 @@ def assign_random_keys(couple):
     return int(K*random())
 
 
-def word_count_1(path):
+def word_count_1():
     # assignment 1: the Improved Word count 1 algorithm described in class the using reduceByKey method
     # reduceByKey, da quello che ho capito, prende la lista di coppie passata da flatMap, e le raggruppa per chiave.
     # e ti chiede cosa fare dei valori delle chiavi: in questo caso dobbiamo sommarle.
@@ -76,17 +77,25 @@ def gather_pairs(x):
             new_couples[word] += count
         else:
             new_couples[word] = count
-    arr = []
     for word, count in new_couples.items():
-        arr.append((word, count))
-    return arr
+        yield word, count
 
 
 def gather_pairs_partitions(couples):
-    return gather_pairs(('', couples))
+    new_couples = {}
+    # new_couples = {
+    #   word: count
+    # }
+    for word, count in couples:
+        if word in new_couples.keys():
+            new_couples[word] += count
+        else:
+            new_couples[word] = count
+    for word, count in new_couples.items():
+        yield word, count
 
 
-def word_count_2(path):
+def word_count_2():
     wc_in_doc = docs\
         .flatMap(word_count_per_doc)\
         .groupBy(assign_random_keys)\
@@ -97,7 +106,7 @@ def word_count_2(path):
     return wc_in_doc
 
 
-def word_count_2_with_partition(path):
+def word_count_2_with_partition():
     wc_in_doc = docs\
         .flatMap(word_count_per_doc)\
         .mapPartitions(gather_pairs_partitions)\
@@ -107,15 +116,15 @@ def word_count_2_with_partition(path):
 
 
 if __name__ == '__main__':
-    print('Word count 1: {}'.format(word_count_1(path)))
+    print('Word count 1: {}\n'.format(word_count_1()))
     # input('See time statistic at "localhost:4040". \nPress any key to compute next step...')
-    print('Word count 2: {}'.format(word_count_2(path)))
+    print('Word count 2: {}\n'.format(word_count_2()))
     # input('See time statistic at "localhost:4040". \nPress any key to compute next step...')
-    wc_partition = word_count_2_with_partition(path)
+    wc_partition = word_count_2_with_partition()
     words_in_wc_partition = wc_partition.count()
-    # print('Word count 2 with implicit partition: {}'.format(words_in_wc_partition))
+    print('Word count 2 with implicit partition: {}\n'.format(words_in_wc_partition))
     # input('See time statistic at "localhost:4040". \nPress any key to compute next step...')
-    print('Average length of distinct words: {}'.format(
+    print('Average length of distinct words: {}\n'.format(
         wc_partition
         .map(lambda x: len(x[0]))
         .reduce(add)/words_in_wc_partition
