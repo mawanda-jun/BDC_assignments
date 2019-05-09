@@ -1,7 +1,8 @@
 from pyspark.mllib.linalg import Vectors
+from typing import List
 
 
-def readVectorsSeq(filename):
+def readVectorsSeq(filename: str = 'covtype10K.data') -> List[Vectors.dense]:
     file = open(filename, 'r')
     vector_list = []
     for row in file.readlines():
