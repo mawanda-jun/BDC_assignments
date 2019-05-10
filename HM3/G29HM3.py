@@ -38,13 +38,13 @@ def partition(P: List[Vectors.dense], S: List[Vectors.dense], WP: List[int]) -> 
     :return: Cluster list of list of Vectors.dense, divided per clusters. The first element of each cluster
     is the centroid
     """
-    cP = [*P]
     clusters = list(map(lambda x: [x], S))
-    weights = [[] for _ in clusters]
+    # giving weight 1 because centroids doens't have weight
+    weights = [[1] for _ in clusters]
     # TODO: check if it is possible to remove this costy call
     # cP.remove(S)
-    distances = [inf for _ in cP]
-    for p_idx, p in enumerate(cP):
+    distances = [inf for _ in P]
+    for p_idx, p in enumerate(P):
         min_dist = inf
         r = -1
         for i, s in enumerate(S):
@@ -52,7 +52,7 @@ def partition(P: List[Vectors.dense], S: List[Vectors.dense], WP: List[int]) -> 
             if temp < min_dist:
                 r = i
                 min_dist = temp
-        distances[p_idx] = min_dist
+        distances[p_idx] = sqrt(WP[p_idx]*min_dist)
         clusters[r].append(p)
         weights[r].append(WP[p_idx])
     return clusters, weights, distances
@@ -72,12 +72,13 @@ def update_distances(
         if temp < distances[i]:
             distances[i] = temp
 
+    # assert inf not in distances
     return distances
 
 
 def select_c(
         S,
-        P_minus_S,
+        P: List[Vectors.dense],
         wp,
         distances):
     """
@@ -87,10 +88,10 @@ def select_c(
     :param wp: weights of P_minus_one
     :return: r is the index of new centroid; C and WC are the partitions with the points already found
     """
-
-    distances = update_distances(P_minus_S, S, wp, distances)
-
+    distances = update_distances(P, S, wp, distances)
+    print('Average_distance: {}'.format(sum(distances)/len(P)))
     sum_of_distances = sum(distances)
+    assert len(wp) == len(distances)
 
     pis = [wp[i]*dist / sum_of_distances for i, dist in enumerate(distances)]
 
@@ -112,32 +113,35 @@ def select_c(
 
     assert left_sum <= x <= right_sum
 
-    return r
+    return r, distances
 
 
 def initialize(
         P: List[Vectors.dense],
         WP: List[int], k: int
 ) -> (
-        List[Vectors.dense]
+        List[Vectors.dense],
+        List[float]
 ):
     P_and_WP = [P, WP]
     bounded = list(zip(*P_and_WP))
     random.shuffle(bounded)
     # create shuffled copies of P and WP so we can pop the first element easier
-    cP, cWP = list(zip(*bounded))
-    cP = list(cP)
-    cWP = list(cWP)
+    cP, cWP = list(map(list, zip(*bounded)))
+    # cP = list(cP)
+    # cWP = list(cWP)
 
-    S = [cP.pop()]  # picking last element for S, since P is now shuffled so last element is a random one
-    cWP.pop()
+    S = [cP[-1]]  # picking last element for S, since P is now shuffled so last element is a random one
+    # cWP.pop()
     distances = [inf for _ in cP]
     for _ in range(k)[1:]:
-        r = select_c(S, cP, cWP, distances)
-        S.append(cP.pop(r))
+        assert len(cP) == len(cWP)
+        r, distances = select_c(S, cP, cWP, distances)
+        S.append(cP[r])
+        # cWP.pop(r)
     # C, WC, _ = update_distances(cP, S, WP, partition=True)
     # return S, C, WC
-    return S
+    return S, distances
 
 
 def centroid(P: List[Vectors.dense], WP: List[Vectors.dense]) -> Vectors.dense:
@@ -148,18 +152,20 @@ def centroid(P: List[Vectors.dense], WP: List[Vectors.dense]) -> Vectors.dense:
     """
     lenP = len(P)
     summa = Vectors.dense([0 for _ in range(len(P[0]))])
+
     for i, p in enumerate(P):
         summa += WP[i]*p
     c_opt = summa/(sum(WP)*lenP)
     return c_opt
 
 
-def kmeansPP(P: List[Vectors.dense], WP: List[int], K: int, iterations: int) -> List[Vectors.dense]:
+def kmeansPP(P: List[Vectors.dense], WP: List[int], K: int, iterations: int) -> (List[Vectors.dense]):
     # S, C, WC = initialize(P, [1 for _ in range(len(P))], K)
-    S = initialize(P, [1 for _ in range(len(P))], K)
+    S, distances = initialize(P, [1 for _ in range(len(P))], K)
     # C = None
     for iter in range(iterations):
         C, WC, distances = partition(P, S, WP)
+        assert len(C[0]) == len(WC[0])
         S_new = []
         for i, c in enumerate(C):
             S_new.append(centroid(c, WC[i]))
@@ -184,7 +190,7 @@ if __name__ == '__main__':
     # sc = conf_spark_env()
     path, k, iterations = argparser()
     coords = readVectorsSeq(path)
-    S, distances = kmeansPP(coords, [1 for i in range(len(coords))], 10, 1)
+    S = kmeansPP(coords, [1 for i in range(len(coords))], k, iterations)
     print(S)
     print(KmeansObj(coords, S))
 
