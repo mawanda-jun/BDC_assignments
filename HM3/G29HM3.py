@@ -110,7 +110,7 @@ def select_c(
     return r
 
 
-def kmPP(P: List[Vectors.dense], WP: List[int], k: int) -> List[Vectors.dense]:
+def initialize(P: List[Vectors.dense], WP: List[int], k: int) -> List[Vectors.dense]:
     P_and_WP = [P, WP]
     bounded = list(zip(*P_and_WP))
     random.shuffle(bounded)
