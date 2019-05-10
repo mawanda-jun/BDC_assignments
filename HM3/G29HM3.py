@@ -6,6 +6,7 @@ import random
 from pyspark.mllib.linalg import Vectors
 from VectorInput import readVectorsSeq
 from typing import List
+import time
 
 
 def argparser() -> (str, int, int):
@@ -48,21 +49,23 @@ def partition(P: List[Vectors.dense], S: List[Vectors.dense], WP: List[int]) -> 
         min_dist = inf
         r = -1
         for i, s in enumerate(S):
-            temp = WP[i]*Vectors.squared_distance(p, s)
+            temp = WP[i]*sqrt(Vectors.squared_distance(p, s))
             if temp < min_dist:
                 r = i
                 min_dist = temp
-        distances[p_idx] = sqrt(WP[p_idx]*min_dist)
+        # assert r > -1
+        distances[p_idx] = min_dist
         clusters[r].append(p)
         weights[r].append(WP[p_idx])
     return clusters, weights, distances
 
 
 def update_distances(
-        P,
-        S,
-        wp,
-        distances):
+        P: List[Vectors.dense],
+        S: List[Vectors.dense],
+        wp: List[int],
+        distances: List[float]
+) -> List[float]:
     # Creating sum_of_distances: we need to take the nearest point of S per each point of P\S.
     # We calculate the value to use it afterward.
     # defining initial cluster so we can keep it and return
@@ -77,10 +80,11 @@ def update_distances(
 
 
 def select_c(
-        S,
+        S: List[Vectors.dense],
         P: List[Vectors.dense],
-        wp,
-        distances):
+        wp: List[int],
+        distances: List[float]
+) -> (int, List[float]):
     """
     Select the right index of P_minus_S to be returned by the algorithm in page 16 of Clustering-2-1819.pdf file
     :param S: List of centroids already found
@@ -89,9 +93,9 @@ def select_c(
     :return: r is the index of new centroid; C and WC are the partitions with the points already found
     """
     distances = update_distances(P, S, wp, distances)
-    print('Average_distance: {}'.format(sum(distances)/len(P)))
+
     sum_of_distances = sum(distances)
-    assert len(wp) == len(distances)
+    # assert len(wp) == len(distances)
 
     pis = [wp[i]*dist / sum_of_distances for i, dist in enumerate(distances)]
 
@@ -111,7 +115,7 @@ def select_c(
                 right_sum = left_sum
             right_sum += pi_j
 
-    assert left_sum <= x <= right_sum
+    # assert left_sum <= x <= right_sum
 
     return r, distances
 
@@ -135,7 +139,7 @@ def initialize(
     # cWP.pop()
     distances = [inf for _ in cP]
     for _ in range(k)[1:]:
-        assert len(cP) == len(cWP)
+        # assert len(cP) == len(cWP)
         r, distances = select_c(S, cP, cWP, distances)
         S.append(cP[r])
         # cWP.pop(r)
@@ -155,22 +159,24 @@ def centroid(P: List[Vectors.dense], WP: List[Vectors.dense]) -> Vectors.dense:
 
     for i, p in enumerate(P):
         summa += WP[i]*p
-    c_opt = summa/(sum(WP)*lenP)
+    c_opt = summa/(sum(WP))
     return c_opt
 
 
 def kmeansPP(P: List[Vectors.dense], WP: List[int], K: int, iterations: int) -> (List[Vectors.dense]):
     # S, C, WC = initialize(P, [1 for _ in range(len(P))], K)
     S, distances = initialize(P, [1 for _ in range(len(P))], K)
+    # print('Average_distance before iteration cicle: {}'.format(sum(distances) / len(P)))
     # C = None
     for iter in range(iterations):
         C, WC, distances = partition(P, S, WP)
-        assert len(C[0]) == len(WC[0])
+        # assert len(C[0]) == len(WC[0])
         S_new = []
         for i, c in enumerate(C):
             S_new.append(centroid(c, WC[i]))
         S = S_new
         # C, WC, _ = update_distances(P, S, WP, partition=True)
+        # print('Average_distance in iteration cicle: {}'.format(sum(distances) / len(P)))
 
     return S
 
@@ -190,7 +196,14 @@ if __name__ == '__main__':
     # sc = conf_spark_env()
     path, k, iterations = argparser()
     coords = readVectorsSeq(path)
+    start = time.time()
     S = kmeansPP(coords, [1 for i in range(len(coords))], k, iterations)
-    print(S)
-    print(KmeansObj(coords, S))
+    # print(S)
+    avg_dist = KmeansObj(coords, S)
+    end = time.time()
+    print('K: {k}\nIterations: {i}\nAverage distance from centers: {d:.2f}\nFound in: {s:.4f}s'.format(
+        d=avg_dist,
+        s=end-start,
+        k=k,
+        i=iterations))
 
