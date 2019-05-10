@@ -30,27 +30,69 @@ def conf_spark_env() -> SparkContext:
     return SparkContext(conf=spark_conf)
 
 
-def partition(P: List[Vectors.dense], S: List[Vectors.dense]) -> List[List[Vectors.dense]]:
-    """
-    Partitions P in S different clusters.
-    :param P: List of Vectors.dense points
-    :param S: List of Vectors.dense centroids that has been provided, one for cluster
-    :return: Cluster list of list of Vectors.dense, divided per clusters
-    """
-    cP = [*P]
-    clusters = list(map(lambda x: [x], S))
-    # TODO: check if it is possible to remove this costy call
-    cP.remove(S)
+# def partition(P: List[Vectors.dense], S: List[Vectors.dense], WP: List[int]) -> (List[List[Vectors.dense]], List[List[int]]):
+#     """
+#     Partitions P in S different clusters.
+#     :param P: List of Vectors.dense points
+#     :param S: List of Vectors.dense centroids that has been provided, one for cluster
+#     :return: Cluster list of list of Vectors.dense, divided per clusters. The first element of each cluster
+#     is the centroid
+#     """
+#     cP = [*P]
+#     clusters = list(map(lambda x: [x], S))
+#     weights = [[] for _ in clusters]
+#     # TODO: check if it is possible to remove this costy call
+#     # cP.remove(S)
+#
+#     for p_idx, p in enumerate(cP):
+#         min_dist = inf
+#         r = -1
+#         for i, s in enumerate(S):
+#             temp = WP[i]*Vectors.squared_distance(p, s)
+#             if temp < min_dist:
+#                 r = i
+#                 min_dist = temp
+#         clusters[r].append(p)
+#         weights[r].append(WP[p_idx])
+#     return clusters, weights
 
-    for p in cP:
-        min_dist = -inf
+
+def partition_distances(
+        P: List[Vectors.dense],
+        S: List[Vectors.dense],
+        wp: List[int],
+        partition: bool
+) -> (
+        List[List[Vectors.dense]],
+        List[List[int]],
+        List[float]
+):
+    # Creating sum_of_distances: we need to take the nearest point of S per each point of P\S.
+    # We calculate the value to use it afterward.
+    lenP = len(P)
+    # defining initial cluster so we can keep it and return
+    C = [[] for _ in S]
+    WC = [[] for _ in S]
+
+    distances = [0.0 for _ in range(lenP)]
+    for i, p in enumerate(P):
+        dist = inf
         r = -1
-        for i, s in enumerate(S):
-            temp = Vectors.squared_distance(p, s)
-            if temp < min_dist:
-                r = i
-        clusters[r].append(p)
-    return clusters
+        # TODO: simplify iterations remembering old computed values of distances for previous centers
+        for j, s in enumerate(S):
+            temp = wp[i] * sqrt(Vectors.squared_distance(p, s))
+            if temp < dist:
+                dist = temp
+                r = j
+
+        # Here I know which point is nearer to, so we construct the partitioning directly
+        if not partition:
+            distances[i] = dist  # distance of every point from the nearest of S
+        else:
+            C[r].append(p)
+            WC[r].append(wp[i])
+
+    return C, WC, distances
 
 
 def select_c(
@@ -62,32 +104,14 @@ def select_c(
     :param S: List of centroids already found
     :param P_minus_S: P\S
     :param wp: weights of P_minus_one
-    :return:
+    :return: r is the index of new centroid; C and WC are the partitions with the points already found
     """
 
-    # Creating sum_of_distances: we need to take the nearest point of S per each point of P\S.
-    # We calculate the value to use it afterward.
-    sum_of_distances = 0
-    for i, p in enumerate(P_minus_S):
-        d_q = inf
-        for s in S:
-            temp = Vectors.squared_distance(p, s)
-            if temp < d_q:
-                d_q = temp
-        sum_of_distances += wp[i]*sqrt(d_q)
+    _, _, distances = partition_distances(P_minus_S, S, wp, partition=False)
 
-    # Creating probability distribution
-    pis = []
-    for i, p in enumerate(P_minus_S):
-        d_p = inf
-        for s in S:
-            # TODO: extract a list from the same iteration above and just iter over weights, not to calculate them again
-            temp = Vectors.squared_distance(p, s)
-            if temp < d_p:
-                d_p = temp
-        #  pis keeps the same order of P_minus_S,
-        #  so then we can use the same index to be returned and used to select P[r]
-        pis.append(wp[i] * sqrt(d_p) / sum_of_distances)
+    sum_of_distances = sum(distances)
+
+    pis = [wp[i]*dist / sum_of_distances for i, dist in enumerate(distances)]
 
     x = random.random()
     r = -1
@@ -110,7 +134,12 @@ def select_c(
     return r
 
 
-def initialize(P: List[Vectors.dense], WP: List[int], k: int) -> List[Vectors.dense]:
+def initialize(
+        P: List[Vectors.dense],
+        WP: List[int], k: int
+) -> (
+        List[Vectors.dense]
+):
     P_and_WP = [P, WP]
     bounded = list(zip(*P_and_WP))
     random.shuffle(bounded)
@@ -123,16 +152,56 @@ def initialize(P: List[Vectors.dense], WP: List[int], k: int) -> List[Vectors.de
     for _ in range(k)[1:]:
         r = select_c(S, cP, cWP)
         S.append(cP.pop(r))
+    # C, WC, _ = partition_distances(cP, S, WP, partition=True)
+    # return S, C, WC
     return S
 
 
-# def kmeansPP(P: List[Vectors.dense], WP: List[int], K: int, iterations: int) -> List[Vectors.dense]:
+def centroid(P: List[Vectors.dense], WP: List[Vectors.dense]) -> Vectors.dense:
+    """
+    Calculates the perfect centroid coordinates
+    :param P:
+    :return:
+    """
+    lenP = len(P)
+    summa = Vectors.dense([0 for _ in range(len(P[0]))])
+    for i, p in enumerate(P):
+        summa += WP[i]*p
+    c_opt = summa/(sum(WP)*lenP)
+    return c_opt
 
+
+def kmeansPP(P: List[Vectors.dense], WP: List[int], K: int, iterations: int) -> List[Vectors.dense]:
+    # S, C, WC = initialize(P, [1 for _ in range(len(P))], K)
+    S = initialize(P, [1 for _ in range(len(P))], K)
+    # C = None
+    for iter in range(iterations):
+        C, WC, _ = partition_distances(P, S, WP, partition=True)
+        S_new = []
+        for i, c in enumerate(C):
+            S_new.append(centroid(c, WC[i]))
+        S = S_new
+        # C, WC, _ = partition_distances(P, S, WP, partition=True)
+
+    return S
+
+
+def KmeansObj(P: List[Vectors.dense], S: List[Vectors.dense]) -> float:
+    """
+
+    :param P: Points of dataset
+    :param S: list of centroids
+    :return: average distance of a point from its centroid center
+    """
+    WP = [1 for _ in P]
+    return sum(partition_distances(P, S, WP, partition=False)[2])/len(P)
 
 
 if __name__ == '__main__':
     # sc = conf_spark_env()
     path, k, iterations = argparser()
     coords = readVectorsSeq(path)
-    # print(kmeansPP(coords, [1 for i in range(len(coords))], 10, 1))
+    S = kmeansPP(coords, [1 for i in range(len(coords))], 10, 1)
+    print(S)
+    print(KmeansObj(coords, S))
 
