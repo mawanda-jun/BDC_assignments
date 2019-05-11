@@ -10,7 +10,10 @@ import time
 
 
 def argparser() -> (str, int, int):
-    # initial settings to accept incoming dataset and k number of partitions
+    """
+    Initial settings to accept incoming dataset and k number of partitions
+    :return: path/to/data_file, k number of clusters, iterations for Lloyd algorithm
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--filename', help='path/to/file.txt', required=True)
     parser.add_argument('-k', '--n_of_clusters', help='number of clusters', required=True)
@@ -19,42 +22,60 @@ def argparser() -> (str, int, int):
 
     path = os.path.join(os.getcwd(), args['filename'])
     if not os.path.isfile(path):
-        raise EnvironmentError('Path/to/file.txt is not right')
+        raise EnvironmentError('{} does not exists. Please double check full path.'.format(path))
     k = int(args['n_of_clusters'])
     iterations = int(args['n_of_iterations'])
     return path, k, iterations
 
 
 def conf_spark_env() -> SparkContext:
+    """
+    Specify spark configuration. In this homework it is not needed though.
+    :return: a SparkContext
+    """
     # defining Spark context
     spark_conf = SparkConf(True).setAppName('G29HM3').setMaster('local')
     return SparkContext(conf=spark_conf)
 
 
-def partition(P: List[Vectors.dense], S: List[Vectors.dense], WP: List[int]) -> (List[List[Vectors.dense]], List[List[int]], float):
+def partition(
+        P: List[Vectors.dense],
+        S: List[Vectors.dense],
+        WP: List[int],
+        calc_dist: bool = True
+) -> (
+        List[List[Vectors.dense]],
+        List[List[int]],
+        float
+):
     """
     Partitions P in S different clusters.
     :param P: List of Vectors.dense points
     :param S: List of Vectors.dense centroids that has been provided, one for cluster
-    :return: Cluster list of list of Vectors.dense, divided per clusters. The first element of each cluster
-    is the centroid
+    :param WP: The weights of each point separated in lists
+    :param calc_dist: boolean to calculate the minimum distance of each point from its nearest centroid
+    :return: Vectors.dense of points, divided per clusters; list of the weights for each point in each cluster; the
+    average distance of each point from its closest centroid
     """
+    # initialize clusters, weights and distances lists
     clusters = list(map(lambda x: [x], S))
-    # giving weight 1 because centroids doens't have weight
+    # giving weight 1 because centroids does not have weight
     weights = [[1] for _ in clusters]
-    # TODO: check if it is possible to remove this costy call
-    # cP.remove(S)
     distances = [inf for _ in P]
+
     for p_idx, p in enumerate(P):
+        # for each point
         min_dist = inf
         r = -1
         for i, s in enumerate(S):
+            # check to which centroid the point is nearer to
             temp = WP[i]*sqrt(Vectors.squared_distance(p, s))
             if temp < min_dist:
                 r = i
                 min_dist = temp
-        # assert r > -1
-        distances[p_idx] = min_dist
+        if calc_dist:
+            # remember calculated distance
+            distances[p_idx] = min_dist
         clusters[r].append(p)
         weights[r].append(WP[p_idx])
     return clusters, weights, distances
@@ -65,17 +86,22 @@ def update_distances(
         S: List[Vectors.dense],
         wp: List[int],
         distances: List[float]
-) -> List[float]:
-    # Creating sum_of_distances: we need to take the nearest point of S per each point of P\S.
-    # We calculate the value to use it afterward.
-    # defining initial cluster so we can keep it and return
-
+) -> (
+        List[float]
+):
+    """
+    Updated distance wrt the last appended element in S
+    :param P: points
+    :param S: centroid. S[-1] is the last one, to which the list of distances is not updated yet
+    :param wp: weight of each point
+    :param distances: list of distances that has already been calculated until S[-1] element
+    :return: list of distances, each one referred to a point to its closest centroid
+    """
     for i, p in enumerate(P):
         temp = wp[i] * sqrt(Vectors.squared_distance(p, S[-1]))
         if temp < distances[i]:
             distances[i] = temp
 
-    # assert inf not in distances
     return distances
 
 
@@ -84,13 +110,17 @@ def select_c(
         P: List[Vectors.dense],
         wp: List[int],
         distances: List[float]
-) -> (int, List[float]):
+) -> (
+        int,
+        List[float]
+):
     """
     Select the right index of P_minus_S to be returned by the algorithm in page 16 of Clustering-2-1819.pdf file
     :param S: List of centroids already found
-    :param P_minus_S: P\S
-    :param wp: weights of P_minus_one
-    :return: r is the index of new centroid; C and WC are the partitions with the points already found
+    :param P: List of points
+    :param wp: weights of P
+    :param distances: list of distances that has already been calculated until S[-1] element
+    :return: r is the index of new centroid; distances is the list of distances updated
     """
     distances = update_distances(P, S, wp, distances)
 
@@ -122,39 +152,49 @@ def select_c(
 
 def initialize(
         P: List[Vectors.dense],
-        WP: List[int], k: int
+        WP: List[int],
+        k: int
 ) -> (
         List[Vectors.dense],
         List[float]
 ):
+    """
+    ASSIGNMENT 1.1
+    Smart initialization for Lloyd using kmeans++ algorithm.
+    :param P: list of points
+    :param WP: list of weights, one for each point
+    :param k: number of clusters
+    :return: list of centroids; list of distances that has already been calculated until S[-1] element
+    """
     P_and_WP = [P, WP]
     bounded = list(zip(*P_and_WP))
     random.shuffle(bounded)
-    # create shuffled copies of P and WP so we can pop the first element easier
+    # create shuffled copies of P and WP so we can select a random element easily
     cP, cWP = list(map(list, zip(*bounded)))
-    # cP = list(cP)
-    # cWP = list(cWP)
 
     S = [cP[-1]]  # picking last element for S, since P is now shuffled so last element is a random one
-    # cWP.pop()
+    # we are not going to delete the picked object. This behaviour is not going to modify the result until the number
+    # of clusters is much lesser than the number of points.
     distances = [inf for _ in cP]
     for _ in range(k)[1:]:
         # assert len(cP) == len(cWP)
         r, distances = select_c(S, cP, cWP, distances)
         S.append(cP[r])
-        # cWP.pop(r)
-    # C, WC, _ = update_distances(cP, S, WP, partition=True)
-    # return S, C, WC
+
     return S, distances
 
 
-def centroid(P: List[Vectors.dense], WP: List[Vectors.dense]) -> Vectors.dense:
+def centroid(
+        P: List[Vectors.dense],
+        WP: List[Vectors.dense]
+) -> (
+        Vectors.dense
+):
     """
-    Calculates the perfect centroid coordinates
-    :param P:
-    :return:
+    Calculates the centroid coordinates
+    :param P: points of one cluster
+    :return: coordinates of the centroid
     """
-    lenP = len(P)
     summa = Vectors.dense([0 for _ in range(len(P[0]))])
 
     for i, p in enumerate(P):
@@ -163,37 +203,49 @@ def centroid(P: List[Vectors.dense], WP: List[Vectors.dense]) -> Vectors.dense:
     return c_opt
 
 
-def kmeansPP(P: List[Vectors.dense], WP: List[int], K: int, iterations: int) -> (List[Vectors.dense]):
-    # S, C, WC = initialize(P, [1 for _ in range(len(P))], K)
-    S, distances = initialize(P, [1 for _ in range(len(P))], K)
-    # print('Average_distance before iteration cicle: {}'.format(sum(distances) / len(P)))
-    # C = None
+def kmeansPP(
+        P: List[Vectors.dense],
+        WP: List[int],
+        K: int,
+        iterations: int
+) -> (
+        List[Vectors.dense]
+):
+    """
+    ASSIGNMENT 1.2. Iterating with Lloyd algorithm.
+    :param P: list of points to be divided into clusters
+    :param WP: weights, one for each point
+    :param K: number of clusters
+    :param iterations: number of iterations
+    :return: list of centroids
+    """
+    S, _ = initialize(P, [1 for _ in range(len(P))], K)
+
     for iter in range(iterations):
-        C, WC, distances = partition(P, S, WP)
-        # assert len(C[0]) == len(WC[0])
+        C, WC, _ = partition(P, S, WP, calc_dist=False)
+
         S_new = []
         for i, c in enumerate(C):
             S_new.append(centroid(c, WC[i]))
         S = S_new
-        # C, WC, _ = update_distances(P, S, WP, partition=True)
-        # print('Average_distance in iteration cicle: {}'.format(sum(distances) / len(P)))
 
     return S
 
 
 def KmeansObj(P: List[Vectors.dense], S: List[Vectors.dense]) -> float:
     """
-
+    ASSIGNMENT 2
+    Calculate average distance from each point to its relative centroid
     :param P: Points of dataset
     :param S: list of centroids
     :return: average distance of a point from its centroid center
     """
+    # setting all weights to 1 as is required by the assignment
     WP = [1 for _ in P]
     return sum(partition(P, S, WP)[2]) / len(P)
 
 
 if __name__ == '__main__':
-    # sc = conf_spark_env()
     path, k, iterations = argparser()
     coords = readVectorsSeq(path)
     start = time.time()
@@ -201,7 +253,7 @@ if __name__ == '__main__':
     # print(S)
     avg_dist = KmeansObj(coords, S)
     end = time.time()
-    print('K: {k}\nIterations: {i}\nAverage distance from centers: {d:.2f}\nFound in: {s:.4f}s'.format(
+    print('K={k}, iter={i}, time={s:.3f}s:[{d:.2f}]'.format(
         d=avg_dist,
         s=end-start,
         k=k,
