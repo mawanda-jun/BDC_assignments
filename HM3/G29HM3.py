@@ -31,7 +31,7 @@ def argparser() -> (str, int, int):
 def conf_spark_env() -> SparkContext:
     """
     Specify spark configuration. In this homework it is not needed though.
-    :return: a SparkContext
+    :return: SparkContext
     """
     # defining Spark context
     spark_conf = SparkConf(True).setAppName('G29HM3').setMaster('local')
@@ -52,10 +52,10 @@ def partition(
     Partitions P in S different clusters.
     :param P: List of Vectors.dense points
     :param S: List of Vectors.dense centroids that has been provided, one for cluster
-    :param WP: The weights of each point separated in lists
+    :param WP: weights of each point separated in lists
     :param calc_dist: boolean to calculate the minimum distance of each point from its nearest centroid
-    :return: Vectors.dense of points, divided per clusters; list of the weights for each point in each cluster; the
-    average distance of each point from its closest centroid
+    :return: Vectors.dense of points, divided per clusters; list of the weights for each point in each cluster;
+             average distance of each point from its closest centroid
     """
     # initialize clusters, weights and distances lists
     clusters = list(map(lambda x: [x], S))
@@ -64,7 +64,6 @@ def partition(
     distances = [inf for _ in P]
 
     for p_idx, p in enumerate(P):
-        # for each point
         min_dist = inf
         r = -1
         for i, s in enumerate(S):
@@ -91,11 +90,11 @@ def update_distances(
 ):
     """
     Updated distance wrt the last appended element in S
-    :param P: points
-    :param S: centroid. S[-1] is the last one, to which the list of distances is not updated yet
+    :param P: List of points
+    :param S: List of centroids. S[-1] is the last one, to which the list of distances is not updated yet
     :param wp: weight of each point
     :param distances: list of distances that has already been calculated until S[-1] element
-    :return: list of distances, each one referred to a point to its closest centroid
+    :return: list of distances updated, each one referred to a point to its closest centroid
     """
     for i, p in enumerate(P):
         temp = wp[i] * sqrt(Vectors.squared_distance(p, S[-1]))
@@ -122,11 +121,11 @@ def select_c(
     :param distances: list of distances that has already been calculated until S[-1] element
     :return: r is the index of new centroid; distances is the list of distances updated
     """
+    # update distances before start
     distances = update_distances(P, S, wp, distances)
 
     sum_of_distances = sum(distances)
-    # assert len(wp) == len(distances)
-
+    # list of probabilities for non-center points of being chosen as next center
     pis = [wp[i]*dist / sum_of_distances for i, dist in enumerate(distances)]
 
     x = random.random()
@@ -144,8 +143,6 @@ def select_c(
                 toggled = True
                 right_sum = left_sum
             right_sum += pi_j
-
-    # assert left_sum <= x <= right_sum
 
     return r, distances
 
@@ -177,7 +174,6 @@ def initialize(
     # of clusters is much lesser than the number of points.
     distances = [inf for _ in cP]
     for _ in range(k)[1:]:
-        # assert len(cP) == len(cWP)
         r, distances = select_c(S, cP, cWP, distances)
         S.append(cP[r])
 
@@ -217,13 +213,14 @@ def kmeansPP(
     :param WP: weights, one for each point
     :param K: number of clusters
     :param iterations: number of iterations
-    :return: list of centroids
+    :return: list of clusters centroids
     """
+    # initialization of clusters points and relative centroids
     S, _ = initialize(P, [1 for _ in range(len(P))], K)
 
+    # iterations of Lloyd algorithm
     for iter in range(iterations):
         C, WC, _ = partition(P, S, WP, calc_dist=False)
-
         S_new = []
         for i, c in enumerate(C):
             S_new.append(centroid(c, WC[i]))
@@ -235,10 +232,10 @@ def kmeansPP(
 def KmeansObj(P: List[Vectors.dense], S: List[Vectors.dense]) -> float:
     """
     ASSIGNMENT 2
-    Calculate average distance from each point to its relative centroid
+    Calculate average distance from each point to its cluster relative centroid
     :param P: Points of dataset
     :param S: list of centroids
-    :return: average distance of a point from its centroid center
+    :return: average distance from each point to its cluster relative centroid
     """
     # setting all weights to 1 as is required by the assignment
     WP = [1 for _ in P]
@@ -247,15 +244,15 @@ def KmeansObj(P: List[Vectors.dense], S: List[Vectors.dense]) -> float:
 
 if __name__ == '__main__':
     path, k, iterations = argparser()
+    # import point coordinates from the dataset
     coords = readVectorsSeq(path)
     start = time.time()
     S = kmeansPP(coords, [1 for i in range(len(coords))], k, iterations)
     # print(S)
     avg_dist = KmeansObj(coords, S)
     end = time.time()
-    print('K={k}, iter={i}, time={s:.3f}s:[{d:.2f}]'.format(
+    print('k={k}, iter={i}, time={s:.3f}s : [{d:.2f}]'.format(
         d=avg_dist,
         s=end-start,
         k=k,
         i=iterations))
-
