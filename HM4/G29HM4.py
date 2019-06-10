@@ -6,6 +6,7 @@ from pyspark import SparkConf, SparkContext
 from pyspark.mllib.linalg import Vectors
 from functools import partial
 from typing import List
+from timeit import default_timer as timer
 
 
 def partition(
@@ -248,19 +249,30 @@ def f2(k, L, iterations, partition):
 
 
 def MR_kmedian(pointset, k, L, iterations):
+    times = np.empty(3)
     # ---------- ROUND 1 ---------------
+    start = timer()
     coreset = pointset.mapPartitions(partial(f2, k, L, iterations))
+    end = timer()
+    times[0] = end - start
     # ---------- ROUND 2 ---------------
+    start = timer()
     centersR1 = []
     weightsR1 = []
     for pair in coreset.collect():
         centersR1.append(pair[0])
         weightsR1.append(pair[1])
     centers = kmeansPP(centersR1, weightsR1, k, iterations)
+    end = timer()
+    times[1] = end - start
     # ---------- ROUND 3 --------------------------
+    start = timer()
     len = coreset.count()
     sum = pointset.map(lambda el: smallest_distance(el, centers)).reduce(lambda x, y: x+y)
-    return sum / len
+    obj = sum / len
+    end = timer()
+    times[2] = end - start
+    return obj, times
 
 
 def f1(line):
@@ -281,7 +293,10 @@ def main(argv):
     print("Number of clusters is : " + str(k))
     print("Number of parts is : " + str(L))
     print("Number of iterations is : " + str(iterations))
-    obj = MR_kmedian(pointset, k, L, iterations)
+    obj, times = MR_kmedian(pointset, k, L, iterations)
+    print("T1 is : {}".format(times[0]))
+    print("T2 is : {}".format(times[1]))
+    print("T3 is : {}".format(times[2]))
     print("Objective function is : " + str(obj))
 
 
