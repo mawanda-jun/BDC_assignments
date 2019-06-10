@@ -1,48 +1,11 @@
-from pyspark import SparkContext, SparkConf
-import argparse
-import os
 import random
-from pyspark.mllib.linalg import Vectors
 import sys
 import math
 import numpy as np
-
 from pyspark import SparkConf, SparkContext
 from pyspark.mllib.linalg import Vectors
 from functools import partial
-from random import randint
-from VectorInput import readVectorsSeq
 from typing import List
-import time
-
-
-def argparser() -> (str, int, int):
-    """
-    Initial settings to accept incoming dataset and k number of partitions
-    :return: path/to/data_file, k number of clusters, iterations for Lloyd algorithm
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-f', '--filename', help='path/to/file.txt', required=True)
-    parser.add_argument('-k', '--n_of_clusters', help='number of clusters', required=True)
-    parser.add_argument('-iter', '--n_of_iterations', help='number of iterations', required=True)
-    args = vars(parser.parse_args())
-
-    path = os.path.join(os.getcwd(), args['filename'])
-    if not os.path.isfile(path):
-        raise EnvironmentError('{} does not exists. Please double check full path.'.format(path))
-    k = int(args['n_of_clusters'])
-    iterations = int(args['n_of_iterations'])
-    return path, k, iterations
-
-
-def conf_spark_env() -> SparkContext:
-    """
-    Specify spark configuration. In this homework it is not needed though.
-    :return: SparkContext
-    """
-    # defining Spark context
-    spark_conf = SparkConf(True).setAppName('G29HM3').setMaster('local')
-    return SparkContext(conf=spark_conf)
 
 
 def partition(
@@ -75,7 +38,8 @@ def partition(
         r = -1
         for i, s in enumerate(S):
             # check to which centroid the point is nearer to
-            temp = WP[i]*math.sqrt(Vectors.squared_distance(p, s))
+            # temp = WP[i]*math.sqrt(Vectors.squared_distance(p, s))
+            temp = WP[i]*np.linalg.norm(p-s)
             if temp < min_dist:
                 r = i
                 min_dist = temp
@@ -104,7 +68,8 @@ def update_distances(
     :return: list of distances updated, each one referred to a point to its closest centroid
     """
     for i, p in enumerate(P):
-        temp = wp[i] * math.sqrt(Vectors.squared_distance(p, S[-1]))
+        # temp = wp[i] * math.sqrt(Vectors.squared_distance(p, S[-1]))
+        temp = wp[i] * np.linalg.norm(p - S[-1])
         if temp < distances[i]:
             distances[i] = temp
 
@@ -252,6 +217,15 @@ def KmeansObj(P: List[Vectors.dense], S: List[Vectors.dense]) -> float:
 # --------------------------------------------------------------
 # --------------------------------------------------------------
 
+def smallest_distance(el: Vectors.dense, centers: List[Vectors.dense]):
+    min = math.inf
+    for center in centers:
+        temp = np.linalg.norm(el - center)
+        if temp < min:
+            min = temp
+    return min
+
+
 def compute_weights(points, centers):
     weights = np.zeros(len(centers))
     for point in points:
@@ -284,8 +258,9 @@ def MR_kmedian(pointset, k, L, iterations):
         weightsR1.append(pair[1])
     centers = kmeansPP(centersR1, weightsR1, k, iterations)
     # ---------- ROUND 3 --------------------------
-    # ---------- ADD YOUR CODE HERE ---------------
-
+    len = coreset.count()
+    sum = pointset.map(lambda el: smallest_distance(el, centers)).reduce(lambda x, y: x+y)
+    return sum / len
 
 
 def f1(line):
