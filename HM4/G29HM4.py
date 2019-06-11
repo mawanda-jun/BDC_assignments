@@ -40,7 +40,7 @@ def partition(
         for i, s in enumerate(S):
             # check to which centroid the point is nearer to
             # temp = WP[i]*math.sqrt(Vectors.squared_distance(p, s))
-            temp = WP[i]*np.linalg.norm(p-s)
+            temp = WP[i]*np.linalg.norm(np.array(p)-np.array(s))
             if temp < min_dist:
                 r = i
                 min_dist = temp
@@ -70,7 +70,7 @@ def update_distances(
     """
     for i, p in enumerate(P):
         # temp = wp[i] * math.sqrt(Vectors.squared_distance(p, S[-1]))
-        temp = wp[i] * np.linalg.norm(p - S[-1])
+        temp = wp[i] * np.linalg.norm(np.array(p) - np.array(S[-1]))
         if temp < distances[i]:
             distances[i] = temp
 
@@ -221,7 +221,8 @@ def KmeansObj(P: List[Vectors.dense], S: List[Vectors.dense]) -> float:
 def smallest_distance(el: Vectors.dense, centers: List[Vectors.dense]):
     min = math.inf
     for center in centers:
-        temp = np.linalg.norm(el - center)
+        # temp = math.sqrt(Vectors.squared_distance(el, center))
+        temp = np.linalg.norm(np.array(el) - np.array(center))
         if temp < min:
             min = temp
     return min
@@ -248,11 +249,27 @@ def f2(k, L, iterations, partition):
     return [(vect, weight) for vect, weight in zip(centers, final_weights)]
 
 
+def rdd_iterate(rdd, chunk_size=1000000):
+    indexed_rows = rdd.zipWithIndex().cache()
+    count = indexed_rows.count()
+    print("Will iterate through RDD of count {}".format(count))
+    start = 0
+    end = start + chunk_size
+    while start < count:
+        print("Grabbing new chunk: start = {}, end = {}".format(start, end))
+        chunk = indexed_rows.filter(lambda r: r[1] >= start and r[1] < end).collect()
+        for row in chunk:
+            yield row[0]
+        start = end
+        end = start + chunk_size
+
+
 def MR_kmedian(pointset, k, L, iterations):
     times = np.empty(3)
     # ---------- ROUND 1 ---------------
     start = timer()
     coreset = pointset.mapPartitions(partial(f2, k, L, iterations))
+    coreset.count()
     end = timer()
     times[0] = end - start
     # ---------- ROUND 2 ---------------
@@ -260,6 +277,7 @@ def MR_kmedian(pointset, k, L, iterations):
     centersR1 = []
     weightsR1 = []
     for pair in coreset.collect():
+    # for pair in rdd_iterate(coreset):
         centersR1.append(pair[0])
         weightsR1.append(pair[1])
     centers = kmeansPP(centersR1, weightsR1, k, iterations)
@@ -267,7 +285,7 @@ def MR_kmedian(pointset, k, L, iterations):
     times[1] = end - start
     # ---------- ROUND 3 --------------------------
     start = timer()
-    len = coreset.count()
+    len = pointset.count()
     sum = pointset.map(lambda el: smallest_distance(el, centers)).reduce(lambda x, y: x+y)
     obj = sum / len
     end = timer()
@@ -276,7 +294,7 @@ def MR_kmedian(pointset, k, L, iterations):
 
 
 def f1(line):
-    return Vectors.dense([float(coord) for coord in line.split(" ")])
+    return Vectors.dense([float(coord) for coord in line.split(" ") if len(coord) > 0])
 
 
 def main(argv):
@@ -285,7 +303,7 @@ def main(argv):
     k = int(argv[2])
     L = int(argv[3])
     iterations = int(argv[4])
-    conf = SparkConf().setAppName('HM4 python Template')
+    conf = SparkConf().setAppName('G29HM4-python')
     sc = SparkContext(conf=conf)
     pointset = sc.textFile(dataset).map(f1).repartition(L).cache()
     N = pointset.count()
