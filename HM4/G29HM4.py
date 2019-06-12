@@ -232,10 +232,14 @@ def compute_weights(points, centers):
     weights = np.zeros(len(centers))
     for point in points:
         mycenter = 0
-        mindist = math.sqrt(point.squared_distance(centers[0]))
+        # mindist = math.sqrt(point.squared_distance(centers[0]))
+        mindist = np.linalg.norm(point - centers[0])
         for i in range(1, len(centers)):
             if math.sqrt(point.squared_distance(centers[i])) < mindist:
                 mindist = math.sqrt(point.squared_distance(centers[i]))
+            temp = np.linalg.norm(centers[i] - point)
+            if temp < mindist:
+                mindist = temp
                 mycenter = i
         weights[mycenter] = weights[mycenter] + 1
     return weights
