@@ -39,8 +39,8 @@ def partition(
         r = -1
         for i, s in enumerate(S):
             # check to which centroid the point is nearer to
-            # temp = WP[i]*math.sqrt(Vectors.squared_distance(p, s))
-            temp = WP[i]*np.linalg.norm(np.array(p)-np.array(s))
+            temp = WP[i]*math.sqrt(Vectors.squared_distance(p, s))
+            # temp = WP[i]*np.linalg.norm(p-s)
             if temp < min_dist:
                 r = i
                 min_dist = temp
@@ -69,8 +69,8 @@ def update_distances(
     :return: list of distances updated, each one referred to a point to its closest centroid
     """
     for i, p in enumerate(P):
-        # temp = wp[i] * math.sqrt(Vectors.squared_distance(p, S[-1]))
-        temp = wp[i] * np.linalg.norm(np.array(p) - np.array(S[-1]))
+        temp = wp[i] * math.sqrt(Vectors.squared_distance(p, S[-1]))
+        # temp = wp[i] * np.linalg.norm(p - S[-1])
         if temp < distances[i]:
             distances[i] = temp
 
@@ -221,8 +221,8 @@ def KmeansObj(P: List[Vectors.dense], S: List[Vectors.dense]) -> float:
 def smallest_distance(el: Vectors.dense, centers: List[Vectors.dense]):
     min = math.inf
     for center in centers:
-        # temp = math.sqrt(Vectors.squared_distance(el, center))
-        temp = np.linalg.norm(np.array(el) - np.array(center))
+        temp = math.sqrt(Vectors.squared_distance(el, center))
+        # temp = np.linalg.norm(el - center)
         if temp < min:
             min = temp
     return min
@@ -236,8 +236,9 @@ def compute_weights(points, centers):
         mindist = np.linalg.norm(point - centers[0])
         for i in range(1, len(centers)):
             # if math.sqrt(point.squared_distance(centers[i])) < mindist:
-            #     mindist = math.sqrt(point.squared_distance(centers[i]))
-            temp = np.linalg.norm(centers[i] - point)
+                # mindist = math.sqrt(point.squared_distance(centers[i]))
+            # temp = np.linalg.norm(centers[i] - point)
+            temp = math.sqrt(point.squared_distance(centers[i]))
             if temp < mindist:
                 mindist = temp
                 mycenter = i
